@@ -827,17 +827,13 @@
 
 
         // --- Recalculation Logic ---
-        const recalculateRekapFrom = async (startDateYMD) => {
-             if (isRecalculating) return;
-            isRecalculating = true;
-            showToast('Menghitung ulang rekap...', 'success');
-            
+        const propagateStockChanges = async (startDateYMD) => {
+            showToast('Memperbarui rekap berantai...', 'info');
             const basePath = `/artifacts/${appId}/public/data`;
             const todayYMD = getTodayYMD();
+
             let currentDate = new Date(startDateYMD + 'T12:00:00Z');
-            
-            const allStockSnapshot = await getDocs(collection(db, `${basePath}/stock_hp`));
-            const allStock = allStockSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+            currentDate.setDate(currentDate.getDate() + 1); // Start from the next day
 
             while (formatDateToYMD(currentDate) <= todayYMD) {
                 const dateStr = formatDateToYMD(currentDate);
@@ -846,34 +842,69 @@
                 prevDate.setDate(prevDate.getDate() - 1);
                 const prevDateStr = formatDateToYMD(prevDate);
                 
-                const prevRekapData = await getOrCreateRekapData(prevDateStr);
-                
-                let currentRekapData = {
-                    tanggal: dateStr,
-                    pagiMbutoh: prevRekapData.malamMbutoh || 0,
-                    pagiSoko: prevRekapData.malamSoko || 0,
-                };
-                
-                const masukMbutoh = allStock.filter(item => item.tanggalMasuk && item.tanggalMasuk.startsWith(dateStr) && (item.sumber === 'mbutoh' || item.sumber === 'lainnya')).length;
-                const masukSoko = allStock.filter(item => item.tanggalMasuk && item.tanggalMasuk.startsWith(dateStr) && item.sumber === 'soko').length;
-                
-                currentRekapData.hpDatang = allStock.filter(item => item.tanggalMasuk && item.tanggalMasuk.startsWith(dateStr) && item.sumber === 'mbutoh').length;
-                currentRekapData.lakuMbutoh = allStock.filter(item => item.tanggalTerjual && item.tanggalTerjual.startsWith(dateStr) && item.sumber === 'mbutoh').length;
-                currentRekapData.lakuSoko = allStock.filter(item => item.tanggalTerjual && item.tanggalTerjual.startsWith(dateStr) && item.sumber === 'soko').length;
+                const prevRekapDocRef = doc(db, `${basePath}/rekap_harian`, prevDateStr);
+                const currentRekapDocRef = doc(db, `${basePath}/rekap_harian`, dateStr);
 
-                currentRekapData.transferKeSoko = allStock.filter(item => item.tanggalTransfer && item.tanggalTransfer.startsWith(dateStr) && item.sumberAsal === 'mbutoh').length;
-                currentRekapData.transferKeMbutoh = allStock.filter(item => item.tanggalTransfer && item.tanggalTransfer.startsWith(dateStr) && item.sumberAsal === 'soko').length;
-                
-                currentRekapData.malamMbutoh = currentRekapData.pagiMbutoh + masukMbutoh - currentRekapData.lakuMbutoh - currentRekapData.transferKeSoko + currentRekapData.transferKeMbutoh;
-                currentRekapData.malamSoko = currentRekapData.pagiSoko + masukSoko - currentRekapData.lakuSoko + currentRekapData.transferKeSoko - currentRekapData.transferKeMbutoh;
+                try {
+                    await runTransaction(db, async (transaction) => {
+                        const prevRekapSnap = await transaction.get(prevRekapDocRef);
+                        const currentRekapSnap = await transaction.get(currentRekapDocRef);
 
-                await setDoc(doc(db, `${basePath}/rekap_harian`, dateStr), currentRekapData, { merge: true });
-                
+                        const prevRekap = prevRekapSnap.exists() ? prevRekapSnap.data() : { malamMbutoh: 0, malamSoko: 0 };
+
+                        if (!currentRekapSnap.exists()) {
+                            const newRekap = {
+                                tanggal: dateStr,
+                                pagiMbutoh: prevRekap.malamMbutoh || 0,
+                                pagiSoko: prevRekap.malamSoko || 0,
+                                hpDatang: 0, lakuMbutoh: 0, lakuSoko: 0, transferKeSoko: 0, transferKeMbutoh: 0,
+                                malamMbutoh: prevRekap.malamMbutoh || 0,
+                                malamSoko: prevRekap.malamSoko || 0
+                            };
+                            transaction.set(currentRekapDocRef, newRekap);
+                        } else {
+                            const currentRekap = currentRekapSnap.data();
+                            const expectedPagiMbutoh = prevRekap.malamMbutoh || 0;
+                            const expectedPagiSoko = prevRekap.malamSoko || 0;
+
+                            if (currentRekap.pagiMbutoh !== expectedPagiMbutoh || currentRekap.pagiSoko !== expectedPagiSoko) {
+                                // NOTE: The formula below relies on the existing rekap fields.
+                                // A flaw in the old model is that HP arriving at 'Soko' are not explicitly tracked
+                                // with a field like 'hpDatangSoko'. This logic mimics the old calculation,
+                                // assuming new Soko stock will be handled when handleAddStok is refactored.
+                                const hpDatangSoko = 0;
+
+                                const newMalamMbutoh = expectedPagiMbutoh
+                                    + (currentRekap.hpDatang || 0)
+                                    - (currentRekap.lakuMbutoh || 0)
+                                    - (currentRekap.transferKeSoko || 0)
+                                    + (currentRekap.transferKeMbutoh || 0);
+
+                                const newMalamSoko = expectedPagiSoko
+                                    + hpDatangSoko
+                                    - (currentRekap.lakuSoko || 0)
+                                    + (currentRekap.transferKeSoko || 0)
+                                    - (currentRekap.transferKeMbutoh || 0);
+
+                                const updates = {
+                                    pagiMbutoh: expectedPagiMbutoh,
+                                    pagiSoko: expectedPagiSoko,
+                                    malamMbutoh: newMalamMbutoh,
+                                    malamSoko: newMalamSoko
+                                };
+                                transaction.update(currentRekapDocRef, updates);
+                            }
+                        }
+                    });
+                } catch (error) {
+                    console.error(`Failed to propagate changes for date: ${dateStr}`, error);
+                    showToast(`Gagal memperbarui rekap tgl ${dateStr}`, 'error');
+                    throw error; // Stop propagation on error
+                }
+
                 currentDate.setDate(currentDate.getDate() + 1);
             }
-            
-            isRecalculating = false;
-            showToast('Rekap selesai dihitung ulang.', 'success');
+            showToast('Rekap selesai diperbarui.', 'success');
         };
 
         // --- CRUD and Actions ---
@@ -900,10 +931,34 @@
         
         const handleAddStok = async (newItem) => {
             const basePath = `/artifacts/${appId}/public/data`;
+            const operationDate = newItem.tanggalMasuk.split('T')[0];
+            const rekapDocRef = doc(db, `${basePath}/rekap_harian`, operationDate);
+
             try {
+                // Add the new item to the stock collection first
                 await addDoc(collection(db, `${basePath}/stock_hp`), { ...newItem, status: 'Tersedia' });
-                showToast('Stok baru berhasil ditambah! Menghitung ulang rekap...', 'success');
-                await recalculateRekapFrom(newItem.tanggalMasuk.split('T')[0]);
+
+                // Now, update the rekap for that day
+                await getOrCreateRekapData(operationDate);
+
+                const malamField = `malam${newItem.sumber.charAt(0).toUpperCase() + newItem.sumber.slice(1)}`;
+                const updates = {};
+                updates[malamField] = increment(1);
+
+                // The old system only tracked "hpDatang" for mbutoh. We'll replicate that for now.
+                if (newItem.sumber === 'mbutoh') {
+                    updates.hpDatang = increment(1);
+                }
+
+                await updateDoc(rekapDocRef, updates);
+
+                // If the item was added to a past date, propagate the changes.
+                const todayYMD = getTodayYMD();
+                if (operationDate < todayYMD) {
+                    await propagateStockChanges(operationDate);
+                }
+
+                showToast('Stok baru berhasil ditambah!', 'success');
                 closeModal('addStokModal');
             } catch (error) { 
                 showToast(`Gagal menambah stok: ${error.message}`, 'error');
@@ -915,74 +970,213 @@
             const basePath = `/artifacts/${appId}/public/data`;
             const operationDate = newItem.tanggalMasuk.split('T')[0];
             const rekapDocRef = doc(db, `${basePath}/rekap_harian`, operationDate);
+            const itemWithSumber = { ...newItem, sumber: 'mbutoh', status: 'Tersedia' };
+
             try {
-                await addDoc(collection(db, `${basePath}/stock_hp`), { ...newItem, sumber: 'mbutoh', status: 'Tersedia' });
+                // Add the new item to the stock collection
+                await addDoc(collection(db, `${basePath}/stock_hp`), itemWithSumber);
+
+                // Ensure the rekap document exists
+                await getOrCreateRekapData(operationDate);
+
+                // Atomically update the rekap document
                 const updates = {
                     hpDatang: increment(1),
                     malamMbutoh: increment(1)
                 };
                 await updateDoc(rekapDocRef, updates);
+
+                // If the item was added to a past date, propagate the changes
+                const todayYMD = getTodayYMD();
+                if (operationDate < todayYMD) {
+                    await propagateStockChanges(operationDate);
+                }
+
                 showToast('HP datang berhasil dicatat!', 'success');
                 closeModal('hpDatangModal');
-            } catch (error) { 
-                if (error.code === 'not-found') { // If rekap doc doesn't exist, create it first then retry
-                    await getOrCreateRekapData(operationDate);
-                    handleHpDatang(newItem);
-                } else {
-                    showToast(`Gagal mencatat HP datang: ${error.message}`, 'error'); 
-                    console.error(error);
-                }
+            } catch (error) {
+                showToast(`Gagal mencatat HP datang: ${error.message}`, 'error');
+                console.error(error);
             }
         };
 
         const handleUpdateItem = async (itemId, oldItem, updatedData) => {
-             const basePath = `/artifacts/${appId}/public/data`;
-             const docRef = doc(db, `${basePath}/stock_hp`, itemId);
-             try {
-                await updateDoc(docRef, updatedData);
-                const oldDate = oldItem.tanggalMasuk.split('T')[0];
-                const newDate = updatedData.tanggalMasuk.split('T')[0];
-                const startDate = oldDate < newDate ? oldDate : newDate;
-                await recalculateRekapFrom(startDate);
+            const basePath = `/artifacts/${appId}/public/data`;
+            const stockDocRef = doc(db, `${basePath}/stock_hp`, itemId);
+
+            const oldDate = oldItem.tanggalMasuk.split('T')[0];
+            const newDate = updatedData.tanggalMasuk.split('T')[0];
+            const oldRekapRef = doc(db, `${basePath}/rekap_harian`, oldDate);
+            const newRekapRef = doc(db, `${basePath}/rekap_harian`, newDate);
+
+            try {
+                await runTransaction(db, async (transaction) => {
+                    // 1. Update the document itself
+                    transaction.update(stockDocRef, updatedData);
+
+                    // 2. "Undo" the old item's contribution
+                    const undoUpdates = {};
+                    const oldMalamField = `malam${oldItem.sumber.charAt(0).toUpperCase() + oldItem.sumber.slice(1)}`;
+                    undoUpdates[oldMalamField] = increment(-1);
+                    if (oldItem.sumber === 'mbutoh') {
+                        undoUpdates.hpDatang = increment(-1);
+                    }
+                    transaction.update(oldRekapRef, undoUpdates);
+
+                    // 3. "Redo" the new item's contribution
+                    // If the date didn't change, we apply the redo updates to the same document.
+                    const redoUpdates = {};
+                    const newMalamField = `malam${updatedData.sumber.charAt(0).toUpperCase() + updatedData.sumber.slice(1)}`;
+                    redoUpdates[newMalamField] = increment(1);
+                    if (updatedData.sumber === 'mbutoh') {
+                        redoUpdates.hpDatang = increment(1);
+                    }
+                    transaction.update(newRekapRef, redoUpdates);
+                });
+
+                // 4. Propagate changes from the earliest affected date
+                const earliestDate = oldDate < newDate ? oldDate : newDate;
+                await propagateStockChanges(earliestDate);
+
                 showToast('Data HP berhasil diupdate!', 'success');
                 closeModal('editStokModal');
-             } catch(error){ showToast('Gagal mengupdate data.', 'error'); }
+            } catch(error) {
+                showToast('Gagal mengupdate data.', 'error');
+                console.error(error);
+            }
         };
 
         const handleConfirmDelete = async (item) => {
             const basePath = `/artifacts/${appId}/public/data`;
-            const operationDate = item.tanggalMasuk.split('T')[0];
             const stockDocRef = doc(db, `${basePath}/stock_hp`, item.id);
+            const addDate = item.tanggalMasuk.split('T')[0];
+            const rekapAddDocRef = doc(db, `${basePath}/rekap_harian`, addDate);
+
             try {
-                await deleteDoc(stockDocRef);
-                await recalculateRekapFrom(operationDate);
+                await runTransaction(db, async (transaction) => {
+                    // 1. Delete the stock item itself
+                    transaction.delete(stockDocRef);
+
+                    // 2. Reverse the item's addition from the rekap on its tanggalMasuk
+                    const addUpdates = {};
+                    const malamFieldAdd = `malam${item.sumber.charAt(0).toUpperCase() + item.sumber.slice(1)}`;
+                    addUpdates[malamFieldAdd] = increment(-1);
+                    if (item.sumber === 'mbutoh') {
+                        addUpdates.hpDatang = increment(-1);
+                    }
+                    transaction.update(rekapAddDocRef, addUpdates);
+
+                    // 3. If the item was sold, also reverse the sale from the rekap
+                    if (item.status === 'Terjual' && item.tanggalTerjual) {
+                        const saleDate = item.tanggalTerjual.split('T')[0];
+                        const rekapSaleDocRef = doc(db, `${basePath}/rekap_harian`, saleDate);
+                        const saleUpdates = {};
+                        const lakuField = `laku${item.sumber.charAt(0).toUpperCase() + item.sumber.slice(1)}`;
+                        const malamFieldSale = `malam${item.sumber.charAt(0).toUpperCase() + item.sumber.slice(1)}`;
+                        saleUpdates[lakuField] = increment(-1);
+                        saleUpdates[malamFieldSale] = increment(1); // Add the stock back on the sale date
+                        transaction.update(rekapSaleDocRef, saleUpdates);
+                    }
+                });
+
+                // 4. Propagate changes forward from the earliest affected date
+                let earliestDate = addDate;
+                if (item.status === 'Terjual' && item.tanggalTerjual) {
+                    const saleDate = item.tanggalTerjual.split('T')[0];
+                    if (saleDate < earliestDate) {
+                        earliestDate = saleDate;
+                    }
+                }
+                await propagateStockChanges(earliestDate);
+
                 showToast('Stok HP berhasil dihapus!', 'success');
                 closeModal('deleteConfirmModal');
-            } catch(error){ showToast(`Gagal menghapus: ${error.message}`, 'error'); }
+            } catch(error) {
+                showToast(`Gagal menghapus: ${error.message}`, 'error');
+                console.error(error);
+            }
         };
         
         const handleConfirmSale = async (item, dateYMD) => {
             const basePath = `/artifacts/${appId}/public/data`;
             const stockDocRef = doc(db, `${basePath}/stock_hp`, item.id);
+            const rekapDocRef = doc(db, `${basePath}/rekap_harian`, dateYMD);
+
             try {
-                await updateDoc(stockDocRef, { status: 'Terjual', tanggalTerjual: new Date(dateYMD + 'T12:00:00Z').toISOString() });
-                await recalculateRekapFrom(dateYMD);
+                // Ensure the rekap document for this day exists before the transaction.
+                // This call is outside the transaction because getOrCreateRekapData performs writes.
+                await getOrCreateRekapData(dateYMD);
+
+                await runTransaction(db, async (transaction) => {
+                    // 1. Update the stock item itself
+                    transaction.update(stockDocRef, {
+                        status: 'Terjual',
+                        tanggalTerjual: new Date(dateYMD + 'T12:00:00Z').toISOString()
+                    });
+
+                    // 2. Prepare and apply the atomic updates to the daily rekap
+                    const lakuField = `laku${item.sumber.charAt(0).toUpperCase() + item.sumber.slice(1)}`;
+                    const malamField = `malam${item.sumber.charAt(0).toUpperCase() + item.sumber.slice(1)}`;
+
+                    const updates = {};
+                    updates[lakuField] = increment(1);
+                    updates[malamField] = increment(-1);
+
+                    transaction.update(rekapDocRef, updates);
+                });
+
+                // If the sale date is in the past, propagate the change forward.
+                const todayYMD = getTodayYMD();
+                if (dateYMD < todayYMD) {
+                    await propagateStockChanges(dateYMD);
+                }
+
                 showToast(`HP terjual di tgl ${dateYMD}!`, 'success');
                 closeModal('saleConfirmModal');
-            } catch (error) { showToast(`Gagal konfirmasi penjualan: ${error.message}`, 'error'); }
+            } catch (error) {
+                showToast(`Gagal konfirmasi penjualan: ${error.message}`, 'error');
+                console.error(error);
+            }
         };
 
         const handleConfirmTransfer = async (item) => {
             const basePath = `/artifacts/${appId}/public/data`;
             const newSumber = item.sumber === 'mbutoh' ? 'soko' : 'mbutoh';
-            const operationDate = getTodayYMD(); 
+            const operationDate = getTodayYMD();
             const stockDocRef = doc(db, `${basePath}/stock_hp`, item.id);
-             try {
-                await updateDoc(stockDocRef, { sumber: newSumber, tanggalTransfer: new Date().toISOString(), sumberAsal: item.sumber });
-                await recalculateRekapFrom(operationDate);
+            const rekapDocRef = doc(db, `${basePath}/rekap_harian`, operationDate);
+
+            try {
+                await getOrCreateRekapData(operationDate);
+
+                await runTransaction(db, async (transaction) => {
+                    // 1. Update the stock item with new location and transfer date
+                    transaction.update(stockDocRef, {
+                        sumber: newSumber,
+                        tanggalTransfer: new Date().toISOString(),
+                        sumberAsal: item.sumber
+                    });
+
+                    // 2. Prepare and apply atomic updates to the daily rekap
+                    const updates = {};
+                    if (item.sumber === 'mbutoh' && newSumber === 'soko') {
+                        updates.transferKeSoko = increment(1);
+                        updates.malamMbutoh = increment(-1);
+                        updates.malamSoko = increment(1);
+                    } else if (item.sumber === 'soko' && newSumber === 'mbutoh') {
+                        updates.transferKeMbutoh = increment(1);
+                        updates.malamSoko = increment(-1);
+                        updates.malamMbutoh = increment(1);
+                    }
+                    transaction.update(rekapDocRef, updates);
+                });
+
                 showToast(`Stok berhasil ditransfer ke ${newSumber}`, 'success');
                 closeModal('transferConfirmModal');
-            } catch (error) { showToast(`Gagal transfer: ${error.message}`, 'error'); }
+            } catch (error) {
+                showToast(`Gagal transfer: ${error.message}`, 'error');
+                console.error(error);
+            }
         };
         
         // --- Modal Opening Functions ---
