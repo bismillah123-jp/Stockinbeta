@@ -794,19 +794,21 @@
         const getOrCreateRekapData = async (date) => {
             const basePath = `/artifacts/${appId}/public/data`;
             const rekapDocRef = doc(db, `${basePath}/rekap_harian`, date);
-            const rekapSnap = await getDoc(rekapDocRef);
 
-            if (rekapSnap.exists()) {
-                return rekapSnap.data();
+            // First, do a normal read. This is fast and handles the 99% case where the doc exists.
+            const initialSnap = await getDoc(rekapDocRef);
+            if (initialSnap.exists()) {
+                return initialSnap.data();
             }
-            
+
+            // If the doc doesn't exist, we proceed to the create logic.
+            // This query for the previous day CANNOT be in the transaction.
             const q = query(
                 collection(db, `${basePath}/rekap_harian`),
                 where("tanggal", "<", date),
                 orderBy("tanggal", "desc"),
                 limit(1)
             );
-            
             const prevRekapSnap = await getDocs(q);
             let yesterdayData = null;
             if (!prevRekapSnap.empty) {
@@ -816,13 +818,28 @@
             const pagiMbutoh = yesterdayData ? yesterdayData.malamMbutoh || 0 : 0;
             const pagiSoko = yesterdayData ? yesterdayData.malamSoko || 0 : 0;
             
-            const newRekap = { 
+            const newRekapData = {
                 tanggal: date, pagiMbutoh, pagiSoko, hpDatang: 0, 
                 lakuMbutoh: 0, lakuSoko: 0, transferKeSoko: 0, 
                 transferKeMbutoh: 0, malamMbutoh: pagiMbutoh, malamSoko: pagiSoko 
             };
-            await setDoc(rekapDocRef, newRekap, {merge: true});
-            return newRekap;
+
+            // Now, run a transaction to atomically check and set the document.
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const docInTransaction = await transaction.get(rekapDocRef);
+                    // Check if another process created the doc while we were querying.
+                    if (!docInTransaction.exists()) {
+                        transaction.set(rekapDocRef, newRekapData);
+                    }
+                });
+            } catch (error) {
+                console.error("Failed to create rekap document transactionally:", error);
+                showToast('Gagal membuat rekap harian baru.', 'error');
+            }
+
+            // Return the data we intended to create. The listener will get the definitive version from Firestore anyway.
+            return newRekapData;
         };
 
 
