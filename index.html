@@ -792,25 +792,30 @@
 
         // --- Helper Function to Get or Create Rekap Data ---
         const getOrCreateRekapData = async (date) => {
+            console.log(`[DIAGNOSTIC] getOrCreateRekapData called for date: ${date}`);
             const basePath = `/artifacts/${appId}/public/data`;
             const rekapDocRef = doc(db, `${basePath}/rekap_harian`, date);
 
-            // First, do a normal read. This is fast and handles the 99% case where the doc exists.
             const initialSnap = await getDoc(rekapDocRef);
             if (initialSnap.exists()) {
+                console.log(`[DIAGNOSTIC] Rekap for ${date} already exists. Returning data.`);
                 return initialSnap.data();
             }
+            console.log(`[DIAGNOSTIC] Rekap for ${date} does not exist. Proceeding to create.`);
 
-            // If doc doesn't exist, calculate previous day's date string for a direct lookup.
             const prevDate = new Date(date + 'T12:00:00Z');
             prevDate.setDate(prevDate.getDate() - 1);
             const prevDateStr = formatDateToYMD(prevDate);
+            console.log(`[DIAGNOSTIC] Calculated previous day's date: ${prevDateStr}`);
             const prevRekapDocRef = doc(db, `${basePath}/rekap_harian`, prevDateStr);
 
             const prevRekapSnap = await getDoc(prevRekapDocRef);
             let yesterdayData = null;
             if (prevRekapSnap.exists()) {
                 yesterdayData = prevRekapSnap.data();
+                console.log(`[DIAGNOSTIC] Found previous day's rekap data:`, JSON.parse(JSON.stringify(yesterdayData)));
+            } else {
+                console.log(`[DIAGNOSTIC] No rekap data found for previous day (${prevDateStr}).`);
             }
 
             const pagiMbutoh = yesterdayData ? yesterdayData.malamMbutoh || 0 : 0;
@@ -821,13 +826,16 @@
                 lakuMbutoh: 0, lakuSoko: 0, transferKeSoko: 0, 
                 transferKeMbutoh: 0, malamMbutoh: pagiMbutoh, malamSoko: pagiSoko 
             };
+            console.log(`[DIAGNOSTIC] Prepared new rekap data for ${date}:`, JSON.parse(JSON.stringify(newRekapData)));
 
-            // Now, run a transaction to atomically check and set the document.
             try {
                 await runTransaction(db, async (transaction) => {
                     const docInTransaction = await transaction.get(rekapDocRef);
                     if (!docInTransaction.exists()) {
+                        console.log(`[DIAGNOSTIC] TRANSACTION: Setting new rekap for ${date}.`);
                         transaction.set(rekapDocRef, newRekapData);
+                    } else {
+                        console.log(`[DIAGNOSTIC] TRANSACTION: Doc for ${date} was created by another process. Aborting set.`);
                     }
                 });
             } catch (error) {
@@ -835,7 +843,6 @@
                 showToast('Gagal membuat rekap harian baru.', 'error');
             }
 
-            // Return the data we intended to create. The listener will get the definitive version from Firestore anyway.
             return newRekapData;
         };
 
@@ -944,31 +951,32 @@
         };
         
         const handleAddStok = async (newItem) => {
+            console.log("[DIAGNOSTIC] handleAddStok called with:", JSON.parse(JSON.stringify(newItem)));
             const basePath = `/artifacts/${appId}/public/data`;
             const operationDate = newItem.tanggalMasuk.split('T')[0];
             const rekapDocRef = doc(db, `${basePath}/rekap_harian`, operationDate);
 
             try {
-                // Add the new item to the stock collection first
                 await addDoc(collection(db, `${basePath}/stock_hp`), { ...newItem, status: 'Tersedia' });
+                console.log("[DIAGNOSTIC] Successfully added item to stock_hp.");
 
-                // Now, update the rekap for that day
                 await getOrCreateRekapData(operationDate);
 
                 const malamField = `malam${newItem.sumber.charAt(0).toUpperCase() + newItem.sumber.slice(1)}`;
                 const updates = {};
                 updates[malamField] = increment(1);
 
-                // The old system only tracked "hpDatang" for mbutoh. We'll replicate that for now.
                 if (newItem.sumber === 'mbutoh') {
                     updates.hpDatang = increment(1);
                 }
+                console.log(`[DIAGNOSTIC] Preparing to update rekap for ${operationDate} with:`, JSON.parse(JSON.stringify(updates)));
 
                 await updateDoc(rekapDocRef, updates);
+                console.log(`[DIAGNOSTIC] Successfully updated rekap for ${operationDate}.`);
 
-                // If the item was added to a past date, propagate the changes.
                 const todayYMD = getTodayYMD();
                 if (operationDate < todayYMD) {
+                    console.log(`[DIAGNOSTIC] Back-dated entry. Propagating changes from ${operationDate}.`);
                     await propagateStockChanges(operationDate);
                 }
 
@@ -976,7 +984,7 @@
                 closeModal('addStokModal');
             } catch (error) { 
                 showToast(`Gagal menambah stok: ${error.message}`, 'error');
-                console.error(error);
+                console.error("[DIAGNOSTIC] Error in handleAddStok:", error);
             }
         };
         
@@ -987,25 +995,17 @@
             const itemWithSumber = { ...newItem, sumber: 'mbutoh', status: 'Tersedia' };
 
             try {
-                // Add the new item to the stock collection
                 await addDoc(collection(db, `${basePath}/stock_hp`), itemWithSumber);
-
-                // Ensure the rekap document exists
                 await getOrCreateRekapData(operationDate);
-
-                // Atomically update the rekap document
                 const updates = {
                     hpDatang: increment(1),
                     malamMbutoh: increment(1)
                 };
                 await updateDoc(rekapDocRef, updates);
-
-                // If the item was added to a past date, propagate the changes
                 const todayYMD = getTodayYMD();
                 if (operationDate < todayYMD) {
                     await propagateStockChanges(operationDate);
                 }
-
                 showToast('HP datang berhasil dicatat!', 'success');
                 closeModal('hpDatangModal');
             } catch (error) {
@@ -1025,10 +1025,7 @@
 
             try {
                 await runTransaction(db, async (transaction) => {
-                    // 1. Update the document itself
                     transaction.update(stockDocRef, updatedData);
-
-                    // 2. "Undo" the old item's contribution
                     const undoUpdates = {};
                     const oldMalamField = `malam${oldItem.sumber.charAt(0).toUpperCase() + oldItem.sumber.slice(1)}`;
                     undoUpdates[oldMalamField] = increment(-1);
@@ -1036,9 +1033,6 @@
                         undoUpdates.hpDatang = increment(-1);
                     }
                     transaction.update(oldRekapRef, undoUpdates);
-
-                    // 3. "Redo" the new item's contribution
-                    // If the date didn't change, we apply the redo updates to the same document.
                     const redoUpdates = {};
                     const newMalamField = `malam${updatedData.sumber.charAt(0).toUpperCase() + updatedData.sumber.slice(1)}`;
                     redoUpdates[newMalamField] = increment(1);
@@ -1047,11 +1041,8 @@
                     }
                     transaction.update(newRekapRef, redoUpdates);
                 });
-
-                // 4. Propagate changes from the earliest affected date
                 const earliestDate = oldDate < newDate ? oldDate : newDate;
                 await propagateStockChanges(earliestDate);
-
                 showToast('Data HP berhasil diupdate!', 'success');
                 closeModal('editStokModal');
             } catch(error) {
@@ -1068,10 +1059,7 @@
 
             try {
                 await runTransaction(db, async (transaction) => {
-                    // 1. Delete the stock item itself
                     transaction.delete(stockDocRef);
-
-                    // 2. Reverse the item's addition from the rekap on its tanggalMasuk
                     const addUpdates = {};
                     const malamFieldAdd = `malam${item.sumber.charAt(0).toUpperCase() + item.sumber.slice(1)}`;
                     addUpdates[malamFieldAdd] = increment(-1);
@@ -1079,8 +1067,6 @@
                         addUpdates.hpDatang = increment(-1);
                     }
                     transaction.update(rekapAddDocRef, addUpdates);
-
-                    // 3. If the item was sold, also reverse the sale from the rekap
                     if (item.status === 'Terjual' && item.tanggalTerjual) {
                         const saleDate = item.tanggalTerjual.split('T')[0];
                         const rekapSaleDocRef = doc(db, `${basePath}/rekap_harian`, saleDate);
@@ -1092,8 +1078,6 @@
                         transaction.update(rekapSaleDocRef, saleUpdates);
                     }
                 });
-
-                // 4. Propagate changes forward from the earliest affected date
                 let earliestDate = addDate;
                 if (item.status === 'Terjual' && item.tanggalTerjual) {
                     const saleDate = item.tanggalTerjual.split('T')[0];
@@ -1102,7 +1086,6 @@
                     }
                 }
                 await propagateStockChanges(earliestDate);
-
                 showToast('Stok HP berhasil dihapus!', 'success');
                 closeModal('deleteConfirmModal');
             } catch(error) {
@@ -1112,36 +1095,35 @@
         };
         
         const handleConfirmSale = async (item, dateYMD) => {
+            console.log(`[DIAGNOSTIC] handleConfirmSale called for item:`, JSON.parse(JSON.stringify(item)), `on date: ${dateYMD}`);
             const basePath = `/artifacts/${appId}/public/data`;
             const stockDocRef = doc(db, `${basePath}/stock_hp`, item.id);
             const rekapDocRef = doc(db, `${basePath}/rekap_harian`, dateYMD);
 
             try {
-                // Ensure the rekap document for this day exists before the transaction.
-                // This call is outside the transaction because getOrCreateRekapData performs writes.
                 await getOrCreateRekapData(dateYMD);
 
                 await runTransaction(db, async (transaction) => {
-                    // 1. Update the stock item itself
                     transaction.update(stockDocRef, {
                         status: 'Terjual',
                         tanggalTerjual: new Date(dateYMD + 'T12:00:00Z').toISOString()
                     });
-
-                    // 2. Prepare and apply the atomic updates to the daily rekap
                     const lakuField = `laku${item.sumber.charAt(0).toUpperCase() + item.sumber.slice(1)}`;
                     const malamField = `malam${item.sumber.charAt(0).toUpperCase() + item.sumber.slice(1)}`;
-
                     const updates = {};
                     updates[lakuField] = increment(1);
                     updates[malamField] = increment(-1);
-
+                    console.log(`[DIAGNOSTIC] TRANSACTION: Preparing to update rekap for ${dateYMD} with:`, JSON.parse(JSON.stringify(updates)));
                     transaction.update(rekapDocRef, updates);
+                }).then(() => {
+                    console.log(`[DIAGNOSTIC] TRANSACTION: Sale confirmation for ${dateYMD} successful.`);
+                }).catch(error => {
+                    console.error(`[DIAGNOSTIC] TRANSACTION: Sale confirmation for ${dateYMD} failed.`, error);
                 });
 
-                // If the sale date is in the past, propagate the change forward.
                 const todayYMD = getTodayYMD();
                 if (dateYMD < todayYMD) {
+                    console.log(`[DIAGNOSTIC] Back-dated sale. Propagating changes from ${dateYMD}.`);
                     await propagateStockChanges(dateYMD);
                 }
 
@@ -1149,7 +1131,7 @@
                 closeModal('saleConfirmModal');
             } catch (error) {
                 showToast(`Gagal konfirmasi penjualan: ${error.message}`, 'error');
-                console.error(error);
+                console.error(`[DIAGNOSTIC] Error in handleConfirmSale:`, error);
             }
         };
 
