@@ -1,0 +1,1497 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Indah Cell - Manajemen Stok</title>
+    <!-- FAVICON -->
+    <link rel="icon" href="https://iili.io/KzamBcl.th.png" type="image/png">
+    <meta name="theme-color" content="#007bff">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/papaparse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        /* Custom Font & Smooth Scrolling */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        html { font-family: 'Inter', sans-serif; scroll-behavior: smooth; }
+        /* Animasi Sederhana */
+        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in-down { animation: fadeInDown 0.5s ease-out forwards; }
+        @keyframes scaleUp { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .animate-scale-up { animation: scaleUp 0.3s cubic-bezier(0.165, 0.84, 0.44, 1) forwards; }
+        @keyframes fadeOut { to { opacity: 0; visibility: hidden; } }
+        .animate-fade-out { animation: fadeOut 0.5s ease-out forwards; }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #64748b; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        /* Menyembunyikan panah di input number */
+        input[type='number']::-webkit-inner-spin-button,
+        input[type='number']::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        input[type='number'] {
+            -moz-appearance: textfield;
+        }
+        /* Responsiveness for table */
+        @media (max-width: 768px) {
+            .table-cell-label {
+                display: inline-block;
+                font-weight: 600;
+                width: 70px; /* Adjust as needed */
+            }
+             #daily-rekap-container {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-slate-800">
+
+    <!-- Login Page -->
+    <div id="login-page" class="fixed inset-0 bg-gray-100 items-center justify-center z-50 p-4 hidden">
+        <div class="w-full max-w-sm mx-auto bg-white p-8 rounded-xl shadow-lg animate-scale-up">
+            <img src="https://iili.io/KzamBcl.th.png" alt="Logo Indah Cell" class="w-24 h-24 mx-auto mb-4">
+            <h2 class="text-2xl font-bold text-center text-slate-800 mb-1">Selamat Datang</h2>
+            <p class="text-center text-gray-500 mb-6">Silakan masuk untuk melanjutkan</p>
+            <form id="login-form">
+                <div class="mb-4">
+                    <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                    <input type="text" id="username" class="w-full bg-gray-100 border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-sky-500" required>
+                </div>
+                <div class="mb-6">
+                    <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" id="password" class="w-full bg-gray-100 border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-sky-500" required>
+                </div>
+                <button type="submit" class="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">Masuk</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Splash Screen / Loading -->
+    <div id="loading-spinner" class="fixed inset-0 bg-gray-100 flex items-center justify-center z-40">
+        <div class="text-center">
+            <img src="https://iili.io/KzamBcl.th.png" alt="Logo Indah Cell" class="w-32 h-32 mx-auto mb-4 animate-pulse">
+            <h2 class="text-2xl font-bold text-slate-800">Pusat Gadget Termurah</h2>
+             <div class="flex items-center justify-center mt-8">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin h-6 w-6 text-sky-600"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>
+                <p id="loading-status" class="ml-4 text-lg text-slate-700">Menghubungkan...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- App Container -->
+    <div id="app-container" class="hidden">
+        <!-- Toast Notification -->
+        <div id="toast" class="fixed top-5 right-5 text-white py-2 px-4 rounded-lg shadow-lg flex items-center z-[100] opacity-0 transition-opacity duration-300 pointer-events-none">
+            <svg id="toast-icon-success" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+            <svg id="toast-icon-error" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
+            <span id="toast-message" class="ml-2"></span>
+        </div>
+
+        <!-- Navbar -->
+        <nav id="navbar" class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
+            <div class="container mx-auto px-4 md:px-6 lg:px-8">
+                <div class="flex justify-between items-center py-3">
+                    <div class="flex items-center gap-6">
+                        <img src="https://iili.io/KzamBcl.th.png" alt="Logo" class="h-8 w-auto">
+                        <div class="hidden sm:flex items-center gap-2">
+                            <button data-page="dashboard" class="nav-button flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors bg-sky-100 text-sky-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                                <span class="hidden md:inline">Dashboard</span>
+                            </button>
+                            <button data-page="statistik" class="nav-button flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors text-gray-500 hover:bg-gray-100">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M3 3v18h18"/><path d="M7 16V7"/><path d="M12 16v-4"/><path d="M17 16V8"/></svg>
+                                <span class="hidden md:inline">Statistik</span>
+                            </button>
+                            <button data-page="pengaturan" class="nav-button flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-colors text-gray-500 hover:bg-gray-100">
+                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 0 2l-.15.08a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l-.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1 0-2l.15-.08a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                                <span class="hidden md:inline">Pengaturan</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                       <button id="add-stok-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold p-2 md:py-2 md:px-4 rounded-lg flex items-center transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                            <span class="ml-2 hidden md:inline">Tambah Stok</span>
+                        </button>
+                        <button id="hp-datang-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold p-2 md:py-2 md:px-4 rounded-lg flex items-center transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+                            <span class="ml-2 hidden md:inline">HP Datang</span>
+                        </button>
+                    </div>
+                </div>
+                 <!-- Mobile Navigation -->
+                <div class="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around py-2 z-40">
+                    <button data-page="dashboard" class="nav-button-mobile flex flex-col items-center text-sky-600">
+                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6 mb-1"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                         <span class="text-xs">Dashboard</span>
+                    </button>
+                     <button data-page="statistik" class="nav-button-mobile flex flex-col items-center text-gray-500">
+                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6 mb-1"><path d="M3 3v18h18"/><path d="M7 16V7"/><path d="M12 16v-4"/><path d="M17 16V8"/></svg>
+                         <span class="text-xs">Statistik</span>
+                    </button>
+                     <button data-page="pengaturan" class="nav-button-mobile flex flex-col items-center text-gray-500">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6 mb-1"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 0 2l-.15.08a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l-.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1 0-2l.15-.08a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                          <span class="text-xs">Pengaturan</span>
+                    </button>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- Main Content -->
+        <main id="main-content" class="container mx-auto p-4 md:p-6 lg:p-8 pb-20 sm:pb-8">
+            <!-- Dashboard Page -->
+            <div id="dashboard-page" class="page">
+                <!-- Daily Rekap -->
+                <div class="bg-white p-5 rounded-xl shadow-md mb-6 border border-gray-200">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+                        <h2 class="font-bold text-xl text-slate-900">Rekap Harian</h2>
+                        <input type="date" id="view-date-input" class="bg-gray-100 border border-gray-300 rounded-lg p-2 text-sm w-full sm:w-auto"/>
+                    </div>
+                    <div id="daily-rekap-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Data rekap akan diisi oleh JS -->
+                    </div>
+                </div>
+                <!-- Stock Table -->
+                <div class="bg-white p-4 rounded-xl shadow-md border border-gray-200">
+                    <div class="flex flex-col md:flex-row items-center justify-between gap-4 mb-4">
+                        <div class="relative w-full md:w-1/2">
+                            <input type="text" id="search-input" placeholder="Cari Tipe atau IMEI..." class="w-full bg-gray-100 text-slate-800 rounded-lg py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-sky-500 border border-gray-300"/>
+                            <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                            </div>
+                        </div>
+                        <div id="filter-buttons" class="flex items-center space-x-2 self-start md:self-center">
+                            <button data-filter="Semua" class="filter-btn px-4 py-2 text-sm font-semibold rounded-lg transition-colors bg-gray-200 text-gray-600 hover:bg-gray-300">Semua</button>
+                            <button data-filter="Tersedia" class="filter-btn px-4 py-2 text-sm font-semibold rounded-lg transition-colors bg-sky-500 text-white">Tersedia</button>
+                            <button data-filter="Terjual" class="filter-btn px-4 py-2 text-sm font-semibold rounded-lg transition-colors bg-gray-200 text-gray-600 hover:bg-gray-300">Terjual</button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-gray-50 border-b border-gray-200">
+                                <tr>
+                                    <th class="p-4 font-semibold text-sm text-gray-600">Tipe HP</th>
+                                    <th class="p-4 font-semibold text-sm text-gray-600 hidden sm:table-cell">IMEI</th>
+                                    <th class="p-4 font-semibold text-sm text-gray-600 hidden sm:table-cell">Status</th>
+                                    <th class="p-4 font-semibold text-sm text-gray-600 text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stock-table-body">
+                                <!-- Data tabel akan diisi oleh JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics Page -->
+            <div id="statistik-page" class="page hidden">
+                <!-- Top Stat Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                    <!-- Cards will be injected by JS -->
+                </div>
+                
+                <!-- Charts Row -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Sales Chart Card -->
+                    <div class="lg:col-span-2 bg-white p-5 rounded-xl shadow-md border border-gray-200">
+                        <h3 class="font-bold text-lg mb-4 text-slate-900">Grafik Penjualan Harian</h3>
+                        <div class="h-80"><canvas id="sales-chart"></canvas></div>
+                    </div>
+                    <!-- Brand Stock Chart Card -->
+                    <div class="bg-white p-5 rounded-xl shadow-md border border-gray-200">
+                         <h3 class="font-bold text-lg mb-4 text-slate-900">Komposisi Stok</h3>
+                         <div class="h-80 flex items-center justify-center relative">
+                            <canvas id="brand-stock-chart"></canvas>
+                         </div>
+                         <div id="brand-stock-total" class="text-center mt-4"></div> 
+                    </div>
+                </div>
+                 <!-- Tipe Terlaris Table -->
+                <div class="mt-6 bg-white p-5 rounded-xl shadow-md border border-gray-200">
+                    <h3 class="font-bold text-lg mb-4 text-slate-900">Tipe HP Terlaris (Bulan Ini)</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead>
+                                <tr class="bg-gray-50 border-b">
+                                    <th class="p-4 font-semibold text-sm text-gray-600">No.</th>
+                                    <th class="p-4 font-semibold text-sm text-gray-600">Tipe HP</th>
+                                    <th class="p-4 font-semibold text-sm text-gray-600 text-center">Unit Terjual</th>
+                                </tr>
+                            </thead>
+                            <tbody id="top-selling-table-body">
+                                <!-- Data akan diisi oleh JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Page -->
+            <div id="pengaturan-page" class="page hidden">
+                <div class="space-y-6 max-w-2xl mx-auto">
+                    <div class="bg-white p-5 rounded-xl shadow-md border border-gray-200">
+                        <h3 class="font-bold text-lg mb-4 text-slate-900">Akun</h3>
+                        <button id="logout-btn" class="flex items-center justify-center gap-2 w-full bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-2 px-4 rounded-lg transition-colors">
+                           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                           Keluar
+                        </button>
+                    </div>
+
+                    <div class="bg-white p-5 rounded-xl shadow-md border border-gray-200">
+                        <h3 class="font-bold text-lg mb-4 text-slate-900">Manajemen Data</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <button id="import-btn" class="flex items-center justify-center gap-2 w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg> Impor Data
+                            </button>
+                            <input type="file" id="import-file-input" accept=".csv, .xlsx" class="hidden"/>
+                            <button id="export-btn" class="flex items-center justify-center gap-2 w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m15 15-3 3-3-3"/></svg> Ekspor ke Excel
+                            </button>
+                        </div>
+                         <p class="text-xs text-gray-500 mt-3">Format file (CSV/XLSX) untuk impor harus memiliki kolom header: `brand`, `tipe`, `imei`, `warna`, `sumber`.</p>
+                    </div>
+                     <div class="bg-white p-5 rounded-xl shadow-md border border-red-200">
+                        <h3 class="font-bold text-lg text-red-600">Zona Berbahaya</h3>
+                        <p class="text-sm text-gray-600 mt-2 mb-4">Tindakan di bawah ini tidak dapat diurungkan. Pastikan Anda tahu apa yang Anda lakukan.</p>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Ketik "RESET DATA" untuk konfirmasi</label>
+                        <input type="text" id="reset-confirm-input" class="w-full bg-gray-100 border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-red-500" />
+                        <button id="reset-data-btn" class="mt-4 w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>Reset Semua Data</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <!-- Modal Container -->
+        <div id="modal-container">
+            <!-- Template untuk Modal akan di-clone oleh JS -->
+        </div>
+    </div>
+
+    <script>
+        // --- SCRIPT UNTUK MEMBUAT MANIFEST PWA SECARA DINAMIS ---
+        let creatorUrlString = document.baseURI || location.href;
+        if (creatorUrlString.startsWith('blob:')) {
+            creatorUrlString = creatorUrlString.substring(5);
+        }
+        const base = new URL('.', creatorUrlString);
+        
+        const manifest = {
+            "name": "Indah Cell Stok",
+            "short_name": "Indah Cell",
+            "start_url": base.href,
+            "display": "standalone",
+            "background_color": "#f1f5f9",
+            "theme_color": "#0ea5e9",
+            "description": "Aplikasi manajemen stok untuk Indah Cell.",
+            "icons": [
+                { "src": "https://iili.io/KzamBcl.th.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+                { "src": "https://iili.io/KzamBcl.th.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+            ]
+        };
+        const manifestJson = JSON.stringify(manifest);
+        const manifestUrl = 'data:application/manifest+json,' + encodeURIComponent(manifestJson);
+        document.querySelector('head').insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestUrl}">`);
+    </script>
+    
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, writeBatch, query, getDoc, setDoc, getDocs, where, orderBy, limit, increment, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Global State & Elements ---
+        let db, auth, userId, appId;
+        let stock = [], brandList = [], tipeHpList = [], monthlySales = [];
+        let currentFilter = 'Tersedia';
+        let searchTerm = '';
+        let viewDate = new Date().toISOString().split('T')[0];
+        let salesChartInstance, brandStockChartInstance;
+        let isAuthReady = false;
+        let isRecalculating = false;
+
+        const loginPage = document.getElementById('login-page');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const loadingStatus = document.getElementById('loading-status');
+        const appContainer = document.getElementById('app-container');
+        const viewDateInput = document.getElementById('view-date-input');
+        const searchInput = document.getElementById('search-input');
+        const filterButtons = document.getElementById('filter-buttons');
+        const stockTableBody = document.getElementById('stock-table-body');
+        const dailyRekapContainer = document.getElementById('daily-rekap-container');
+        const modalContainer = document.getElementById('modal-container');
+        
+        // --- Utility Functions ---
+        const showToast = (message, type = 'success') => {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toast-message');
+            const successIcon = document.getElementById('toast-icon-success');
+            const errorIcon = document.getElementById('toast-icon-error');
+            
+            toastMessage.textContent = message;
+            
+            if (type === 'success') {
+                toast.classList.remove('bg-red-500');
+                toast.classList.add('bg-green-500');
+                successIcon.classList.remove('hidden');
+                errorIcon.classList.add('hidden');
+            } else {
+                toast.classList.remove('bg-green-500');
+                toast.classList.add('bg-red-500');
+                successIcon.classList.add('hidden');
+                errorIcon.classList.remove('hidden');
+            }
+            
+            toast.classList.remove('opacity-0');
+            toast.classList.remove('pointer-events-none');
+            
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                toast.classList.add('pointer-events-none');
+            }, 3000);
+        };
+
+        const createModal = (id, title, contentHTML, size = 'lg') => {
+            const existingModal = document.getElementById(id);
+            if(existingModal) existingModal.remove();
+
+            const sizeClasses = { sm: 'max-w-sm', lg: 'max-w-lg' };
+            const modalHTML = `
+                <div id="${id}" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+                    <div class="modal-content bg-white rounded-xl shadow-2xl p-6 lg:p-8 w-full ${sizeClasses[size]} relative animate-scale-up text-gray-800">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-xl lg:text-2xl font-bold text-slate-900">${title}</h2>
+                            <button class="modal-close-btn text-gray-400 hover:text-gray-800 transition-colors text-3xl">&times;</button>
+                        </div>
+                        ${contentHTML}
+                    </div>
+                </div>
+            `;
+            modalContainer.insertAdjacentHTML('beforeend', modalHTML);
+            
+            const modal = document.getElementById(id);
+            modal.addEventListener('click', (e) => {
+                if (e.target === e.currentTarget) closeModal(id);
+            });
+            modal.querySelector('.modal-close-btn').addEventListener('click', () => closeModal(id));
+            
+            return modal;
+        };
+        
+        const closeModal = (id) => {
+            const modal = document.getElementById(id);
+            if (modal) modal.remove();
+        }
+
+        const getTodayYMD = () => new Date().toISOString().split('T')[0];
+        const formatDateToYMD = (date) => date.toISOString().split('T')[0];
+
+        // --- Render Functions ---
+        const renderStockTable = () => {
+            const filteredStock = stock.filter(item => 
+                (currentFilter === 'Semua' || item.status === currentFilter) && 
+                (item.tipe.toLowerCase().includes(searchTerm.toLowerCase()) || item.imei.toLowerCase().includes(searchTerm.toLowerCase()))
+            ).sort((a, b) => new Date(b.tanggalMasuk) - new Date(a.tanggalMasuk));
+
+            if (!stockTableBody) return;
+            stockTableBody.innerHTML = ''; // Clear table
+            
+            if (filteredStock.length === 0) {
+                stockTableBody.innerHTML = `<tr><td colspan="4" class="text-center p-8 text-gray-500">${searchTerm ? "Tidak ada data yang cocok." : "Belum ada data stok."}</td></tr>`;
+                return;
+            }
+
+            filteredStock.forEach(item => {
+                const row = document.createElement('tr');
+                row.className = 'border-b border-gray-200 hover:bg-gray-50 transition-colors';
+                // Mobile-first design for table rows
+                row.innerHTML = `
+                    <td class="p-4 font-medium text-slate-900">
+                        <div>${item.tipe}</div>
+                        <div class="text-xs text-gray-500">${item.warna || ''} - ${item.sumber}</div>
+                        <div class="sm:hidden mt-2">
+                            <div><span class="table-cell-label">IMEI:</span> <span class="font-mono text-sm">${item.imei}</span></div>
+                            <div><span class="table-cell-label">Status:</span> <span class="px-2 py-1 text-xs font-bold rounded-full ${item.status === 'Tersedia' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">${item.status}</span></div>
+                        </div>
+                    </td>
+                    <td class="p-4 text-gray-500 font-mono text-sm hidden sm:table-cell">${item.imei}</td>
+                    <td class="p-4 hidden sm:table-cell"><span class="px-2 py-1 text-xs font-bold rounded-full ${item.status === 'Tersedia' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">${item.status}</span></td>
+                    <td class="p-4 text-center">
+                        <div class="flex items-center justify-center space-x-2">
+                            ${item.status === 'Tersedia' ? `
+                                <button data-id="${item.id}" class="action-btn-sale text-green-500 hover:text-green-700 p-1" title="Tandai Laku"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></button>
+                                <button data-id="${item.id}" class="action-btn-transfer text-blue-500 hover:text-blue-700 p-1" title="Transfer Stok"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5l7 7-7 7"/><path d="M3 12h18"/></svg></button>
+                            ` : ''}
+                            <button data-id="${item.id}" class="action-btn-edit text-gray-500 hover:text-gray-700 p-1" title="Edit Stok"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg></button>
+                            <button data-id="${item.id}" class="action-btn-delete text-red-500 hover:text-red-700 p-1" title="Hapus Stok"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg></button>
+                        </div>
+                    </td>
+                `;
+                stockTableBody.appendChild(row);
+            });
+        };
+
+        const renderDailyRekap = (rekap) => {
+            if (!dailyRekapContainer || !rekap) {
+                dailyRekapContainer.innerHTML = `<p class="text-center col-span-full">Memuat rekap...</p>`;
+                return;
+            }
+
+            const pagiMbutoh = rekap.pagiMbutoh || 0;
+            const pagiSoko = rekap.pagiSoko || 0;
+            const malamMbutoh = rekap.malamMbutoh || 0;
+            const malamSoko = rekap.malamSoko || 0;
+            const totalPagi = pagiMbutoh + pagiSoko;
+            const totalMalam = malamMbutoh + malamSoko;
+            const totalLaku = (rekap.lakuMbutoh || 0) + (rekap.lakuSoko || 0);
+            const totalTransfer = (rekap.transferKeSoko || 0) + (rekap.transferKeMbutoh || 0);
+
+            dailyRekapContainer.innerHTML = `
+                <!-- Card Stok Pagi -->
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                    <div class="flex items-center text-gray-500 mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m4.93 19.07 1.41-1.41"/><path d="m17.66 6.34 1.41-1.41"/></svg>
+                        <span class="font-semibold">Stok Pagi</span>
+                    </div>
+                    <div>
+                        <p class="text-4xl font-bold text-slate-800">${totalPagi}</p>
+                        <p class="text-xs text-gray-400">Mbutoh: ${pagiMbutoh} | Soko: ${pagiSoko}</p>
+                    </div>
+                </div>
+
+                <!-- Card HP Datang -->
+                <div class="bg-green-50 text-green-800 p-4 rounded-xl shadow-sm border border-green-200 flex flex-col justify-between">
+                    <div class="flex items-center text-green-600 mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                        <span class="font-semibold">HP Datang</span>
+                    </div>
+                    <div>
+                        <p class="text-4xl font-bold">${rekap.hpDatang || 0}</p>
+                        <p class="text-xs text-green-500">Unit Baru Masuk</p>
+                    </div>
+                </div>
+
+                <!-- Card Terjual -->
+                <div class="bg-red-50 text-red-800 p-4 rounded-xl shadow-sm border border-red-200 flex flex-col justify-between">
+                    <div class="flex items-center text-red-600 mb-2">
+                       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="m22 13-8.07 8.07a2.83 2.83 0 0 1-4 0L2 13V2h11l9 9z"/><path d="M7 7h.01"/></svg>
+                        <span class="font-semibold">Total Laku</span>
+                    </div>
+                    <div>
+                        <p class="text-4xl font-bold">${totalLaku}</p>
+                        <p class="text-xs text-red-500">Mbutoh: ${rekap.lakuMbutoh || 0} | Soko: ${rekap.lakuSoko || 0}</p>
+                    </div>
+                </div>
+                
+                <!-- Card Transfer -->
+                <div class="bg-blue-50 text-blue-800 p-4 rounded-xl shadow-sm border border-blue-200 flex flex-col justify-between">
+                     <div class="flex items-center text-blue-600 mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+                        <span class="font-semibold">Transfer</span>
+                    </div>
+                    <div>
+                        <p class="text-4xl font-bold">${totalTransfer}</p>
+                        <p class="text-xs text-blue-500">Ke Soko: ${rekap.transferKeSoko || 0} | Ke Mbutoh: ${rekap.transferKeMbutoh || 0}</p>
+                    </div>
+                </div>
+
+                <!-- Card Stok Malam -->
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                    <div class="flex items-center text-gray-500 mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+                        <span class="font-semibold">Stok Malam</span>
+                    </div>
+                    <div>
+                        <p class="text-4xl font-bold text-slate-800">${totalMalam}</p>
+                        <p class="text-xs text-gray-400">Mbutoh: ${malamMbutoh} | Soko: ${malamSoko}</p>
+                    </div>
+                </div>
+                
+                <!-- Card Total Keseluruhan -->
+                <div class="bg-sky-500 text-white p-4 rounded-xl shadow-lg border border-sky-600 flex flex-col justify-center text-center">
+                    <div class="flex items-center justify-center mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+                        <span class="font-semibold">Total Stok Akhir</span>
+                    </div>
+                    <p class="text-4xl font-bold">${totalMalam}</p>
+                </div>
+            `;
+        };
+        
+        const renderStatsPage = () => {
+            const statsPage = document.getElementById('statistik-page');
+            if(statsPage.classList.contains('hidden')) return;
+
+            // Destroy existing charts to prevent duplicates
+            if (salesChartInstance) salesChartInstance.destroy();
+            if (brandStockChartInstance) brandStockChartInstance.destroy();
+
+            // Card Stats
+            const totalTerjual = monthlySales.reduce((acc, curr) => acc + (curr.lakuMbutoh || 0) + (curr.lakuSoko || 0), 0);
+            const totalTersedia = stock.filter(item => item.status === 'Tersedia').length;
+            
+            const salesBrandCounts = stock.filter(item => item.status === 'Terjual').reduce((acc, item) => {
+                 const brand = item.brand || 'LAINNYA';
+                 acc[brand] = (acc[brand] || 0) + 1;
+                 return acc;
+            }, {});
+            const topSellingBrand = Object.entries(salesBrandCounts).sort((a,b) => b[1] - a[1])[0];
+           
+            const oldestStock = stock
+                .filter(item => item.status === 'Tersedia')
+                .sort((a, b) => new Date(a.tanggalMasuk) - new Date(b.tanggalMasuk))[0];
+            let oldestStockInfo = '-';
+            if (oldestStock) {
+                const daysOld = Math.floor((new Date() - new Date(oldestStock.tanggalMasuk)) / (1000 * 60 * 60 * 24));
+                oldestStockInfo = `${oldestStock.tipe} (${daysOld} hari)`;
+            }
+
+            const statCardsContainer = statsPage.querySelector('.grid');
+            statCardsContainer.innerHTML = `
+                 <div class="bg-white p-5 rounded-xl shadow-md border border-gray-200 flex items-center gap-4">
+                    <div class="bg-sky-100 text-sky-600 p-3 rounded-lg"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+                    <div><p class="text-sm text-gray-500">Total Terjual (Bulan Ini)</p><p class="text-2xl font-bold text-slate-900">${totalTerjual}</p></div>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-md border border-gray-200 flex items-center gap-4">
+                    <div class="bg-green-100 text-green-600 p-3 rounded-lg"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></div>
+                    <div><p class="text-sm text-gray-500">Stok Tersedia</p><p class="text-2xl font-bold text-slate-900">${totalTersedia}</p></div>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-md border border-gray-200 flex items-center gap-4">
+                    <div class="bg-yellow-100 text-yellow-600 p-3 rounded-lg"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div>
+                    <div><p class="text-sm text-gray-500">Brand Terlaris</p><p class="text-xl font-bold text-slate-900">${topSellingBrand ? `${topSellingBrand[0]} <span class="text-sm font-normal text-gray-500">(${topSellingBrand[1]})</span>` : '-'}</p></div>
+                </div>
+                 <div class="bg-white p-5 rounded-xl shadow-md border border-gray-200 flex items-center gap-4">
+                    <div class="bg-purple-100 text-purple-600 p-3 rounded-lg"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/></svg></div>
+                    <div><p class="text-sm text-gray-500">Stok Paling Lama</p><p class="text-md font-bold text-slate-900">${oldestStockInfo}</p></div>
+                </div>
+            `;
+
+            // Sales Line Chart
+            const salesCtx = document.getElementById('sales-chart').getContext('2d');
+            const sortedSales = [...monthlySales].sort((a,b) => a.tanggal.localeCompare(b.tanggal));
+            
+            const gradient = salesCtx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, 'rgba(59, 130, 246, 0.5)');
+            gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+
+            salesChartInstance = new Chart(salesCtx, {
+                type: 'line',
+                data: {
+                    labels: sortedSales.map(s => new Date(s.tanggal+'T12:00:00Z').toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })),
+                    datasets: [{
+                        label: 'Penjualan Harian',
+                        data: sortedSales.map(s => (s.lakuMbutoh || 0) + (s.lakuSoko || 0)),
+                        backgroundColor: gradient,
+                        borderColor: '#3b82f6',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#3b82f6',
+                        pointBorderColor: '#fff',
+                        pointHoverRadius: 6,
+                        pointRadius: 4,
+                    }]
+                },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }, 
+                    plugins: { legend: { display: false } }
+                }
+            });
+
+            // Brand Stock Doughnut Chart
+            const brandCtx = document.getElementById('brand-stock-chart').getContext('2d');
+            const brandStokCounts = stock.filter(item => item.status === 'Tersedia').reduce((acc, item) => {
+                const brand = item.brand || 'LAINNYA';
+                acc[brand] = (acc[brand] || 0) + 1;
+                return acc;
+            }, {});
+
+            const sortedBrandData = Object.entries(brandStokCounts).sort((a, b) => b[1] - a[1]);
+            const topBrands = sortedBrandData.slice(0, 5);
+            const otherBrandsCount = sortedBrandData.slice(5).reduce((acc, curr) => acc + curr[1], 0);
+
+            let chartLabels = topBrands.map(b => b[0]);
+            let chartData = topBrands.map(b => b[1]);
+
+            if (otherBrandsCount > 0) {
+                chartLabels.push('Lainnya');
+                chartData.push(otherBrandsCount);
+            }
+            
+            document.getElementById('brand-stock-total').innerHTML = `<p class="text-sm text-gray-500">Total Stok Tersedia</p><p class="text-2xl font-bold text-slate-900">${totalTersedia}</p>`;
+
+            brandStockChartInstance = new Chart(brandCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: chartLabels,
+                    datasets: [{
+                        label: 'Jumlah Stok',
+                        data: chartData,
+                        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b'],
+                        borderColor: '#fff',
+                        borderWidth: 2,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    onClick: (evt) => {
+                        const points = brandStockChartInstance.getElementsAtEventForMode(evt, 'nearest', { intersect: true }, true);
+                        if (points.length) {
+                            const firstPoint = points[0];
+                            const label = brandStockChartInstance.data.labels[firstPoint.index];
+                            if (label && label !== 'Lainnya') {
+                                navigateToDashboardWithFilter(label);
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                boxWidth: 12,
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Top Selling Table
+            const topSellingBody = document.getElementById('top-selling-table-body');
+            topSellingBody.innerHTML = '';
+            const thisMonth = new Date().getMonth();
+            const topSellingItems = stock
+                .filter(item => item.status === 'Terjual' && new Date(item.tanggalTerjual).getMonth() === thisMonth)
+                .reduce((acc, item) => {
+                    acc[item.tipe] = (acc[item.tipe] || 0) + 1;
+                    return acc;
+                }, {});
+            
+            Object.entries(topSellingItems)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .forEach(([tipe, count], index) => {
+                    const row = `
+                        <tr class="border-b">
+                            <td class="p-4 text-sm text-gray-500">${index + 1}.</td>
+                            <td class="p-4 font-medium text-slate-800">${tipe}</td>
+                            <td class="p-4 text-center text-sm font-semibold text-slate-800">${count}</td>
+                        </tr>`;
+                    topSellingBody.innerHTML += row;
+                });
+             if (topSellingBody.innerHTML === '') {
+                topSellingBody.innerHTML = `<tr><td colspan="3" class="text-center p-8 text-gray-500">Belum ada penjualan bulan ini.</td></tr>`;
+            }
+        };
+
+        const navigateToDashboardWithFilter = (brand) => {
+            // 1. Update state variables
+            currentFilter = 'Tersedia';
+            searchTerm = brand;
+
+            // 2. Switch page view
+            document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+            document.getElementById('dashboard-page').classList.remove('hidden');
+
+            // 3. Update UI elements to reflect state
+            // Update nav buttons
+            document.querySelectorAll('.nav-button, .nav-button-mobile').forEach(b => {
+                b.classList.remove('text-sky-600', 'bg-sky-100');
+                b.classList.add('text-gray-500');
+            });
+            document.querySelectorAll(`[data-page="dashboard"]`).forEach(btn => {
+                btn.classList.add('text-sky-600');
+                 if(!btn.classList.contains('nav-button-mobile')){
+                     btn.classList.add('bg-sky-100');
+                 }
+            });
+            
+            // Update filter buttons
+            document.querySelectorAll('#filter-buttons .filter-btn').forEach(b => {
+                b.classList.remove('bg-sky-500', 'text-white');
+                b.classList.add('bg-gray-200', 'text-gray-600');
+            });
+            const tersediaFilter = document.querySelector('#filter-buttons .filter-btn[data-filter="Tersedia"]');
+            tersediaFilter.classList.add('bg-sky-500', 'text-white');
+            tersediaFilter.classList.remove('bg-gray-200', 'text-gray-600');
+            
+            // Update search input
+            searchInput.value = brand;
+
+            // 4. Re-render the table with new filters
+            renderStockTable();
+        };
+
+        // --- Firebase Logic ---
+        const setupFirebaseListeners = () => {
+            loadingStatus.textContent = 'Memuat data...';
+            const basePath = `/artifacts/${appId}/public/data`; 
+
+            // Stock listener
+            const stockQuery = collection(db, `${basePath}/stock_hp`);
+            const unsubscribeStock = onSnapshot(stockQuery, snap => {
+              stock = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+              renderStockTable();
+              renderStatsPage();
+              
+              if (!appContainer.classList.contains('hidden')) return;
+              loadingSpinner.classList.add('animate-fade-out');
+              appContainer.classList.remove('hidden');
+
+            }, (error) => {
+                console.error("Firestore listener error:", error);
+                showToast(`Gagal memuat data: ${error.message}`, 'error');
+                loadingSpinner.innerHTML = `<p class="text-red-600 font-bold p-4 text-center">Gagal memuat data.<br>Pastikan aturan keamanan Firebase Anda mengizinkan akses baca/tulis ke path:<br><code>${basePath}</code></p>`;
+            });
+
+            // Brand & Tipe listener
+            onSnapshot(collection(db, `${basePath}/brands`), snap => {
+                brandList = snap.docs.map(doc => doc.data().nama).sort();
+            });
+            onSnapshot(collection(db, `${basePath}/tipe_hp`), snap => {
+                tipeHpList = snap.docs.map(doc => ({id: doc.id, ...doc.data()})).sort((a, b) => a.nama.localeCompare(b.nama));
+            });
+            
+            setupRekapListener(viewDate);
+        };
+        
+        let unsubscribeRekap;
+        let unsubscribeMonthly;
+        const setupRekapListener = (date) => {
+            if (!isAuthReady) return;
+            const basePath = `/artifacts/${appId}/public/data`;
+            if (unsubscribeRekap) unsubscribeRekap();
+            if (unsubscribeMonthly) unsubscribeMonthly();
+            
+            const rekapDocRef = doc(db, `${basePath}/rekap_harian`, date);
+            unsubscribeRekap = onSnapshot(rekapDocRef, async (docSnap) => {
+                let rekapData;
+                if (docSnap.exists()) {
+                    rekapData = docSnap.data();
+                } else {
+                    rekapData = await getOrCreateRekapData(date);
+                }
+                renderDailyRekap(rekapData);
+            });
+
+            const currentMonth = date.substring(0, 7);
+            const monthlyQuery = query(collection(db, `${basePath}/rekap_harian`), where("tanggal", ">=", currentMonth + "-01"), where("tanggal", "<=", currentMonth + "-31"));
+            unsubscribeMonthly = onSnapshot(monthlyQuery, (snap) => {
+                monthlySales = snap.docs.map(doc => doc.data());
+                renderStatsPage();
+            });
+        };
+
+        // --- Helper Function to Get or Create Rekap Data ---
+        const getOrCreateRekapData = async (date) => {
+            const basePath = `/artifacts/${appId}/public/data`;
+            const rekapDocRef = doc(db, `${basePath}/rekap_harian`, date);
+            const rekapSnap = await getDoc(rekapDocRef);
+
+            if (rekapSnap.exists()) {
+                return rekapSnap.data();
+            }
+            
+            const q = query(
+                collection(db, `${basePath}/rekap_harian`),
+                where("tanggal", "<", date),
+                orderBy("tanggal", "desc"),
+                limit(1)
+            );
+            
+            const prevRekapSnap = await getDocs(q);
+            let yesterdayData = null;
+            if (!prevRekapSnap.empty) {
+                yesterdayData = prevRekapSnap.docs[0].data();
+            }
+
+            const pagiMbutoh = yesterdayData ? yesterdayData.malamMbutoh || 0 : 0;
+            const pagiSoko = yesterdayData ? yesterdayData.malamSoko || 0 : 0;
+            
+            const newRekap = { 
+                tanggal: date, pagiMbutoh, pagiSoko, hpDatang: 0, 
+                lakuMbutoh: 0, lakuSoko: 0, transferKeSoko: 0, 
+                transferKeMbutoh: 0, malamMbutoh: pagiMbutoh, malamSoko: pagiSoko 
+            };
+            await setDoc(rekapDocRef, newRekap, {merge: true});
+            return newRekap;
+        };
+
+
+        // --- Recalculation Logic ---
+        const recalculateRekapFrom = async (startDateYMD) => {
+             if (isRecalculating) return;
+            isRecalculating = true;
+            showToast('Menghitung ulang rekap...', 'success');
+            
+            const basePath = `/artifacts/${appId}/public/data`;
+            const todayYMD = getTodayYMD();
+            let currentDate = new Date(startDateYMD + 'T12:00:00Z');
+            
+            const allStockSnapshot = await getDocs(collection(db, `${basePath}/stock_hp`));
+            const allStock = allStockSnapshot.docs.map(d => ({id: d.id, ...d.data()}));
+
+            while (formatDateToYMD(currentDate) <= todayYMD) {
+                const dateStr = formatDateToYMD(currentDate);
+                
+                const prevDate = new Date(currentDate);
+                prevDate.setDate(prevDate.getDate() - 1);
+                const prevDateStr = formatDateToYMD(prevDate);
+                
+                const prevRekapData = await getOrCreateRekapData(prevDateStr);
+                
+                let currentRekapData = {
+                    tanggal: dateStr,
+                    pagiMbutoh: prevRekapData.malamMbutoh || 0,
+                    pagiSoko: prevRekapData.malamSoko || 0,
+                };
+                
+                const masukMbutoh = allStock.filter(item => item.tanggalMasuk && item.tanggalMasuk.startsWith(dateStr) && (item.sumber === 'mbutoh' || item.sumber === 'lainnya')).length;
+                const masukSoko = allStock.filter(item => item.tanggalMasuk && item.tanggalMasuk.startsWith(dateStr) && item.sumber === 'soko').length;
+                
+                currentRekapData.hpDatang = allStock.filter(item => item.tanggalMasuk && item.tanggalMasuk.startsWith(dateStr) && item.sumber === 'mbutoh').length;
+                currentRekapData.lakuMbutoh = allStock.filter(item => item.tanggalTerjual && item.tanggalTerjual.startsWith(dateStr) && item.sumber === 'mbutoh').length;
+                currentRekapData.lakuSoko = allStock.filter(item => item.tanggalTerjual && item.tanggalTerjual.startsWith(dateStr) && item.sumber === 'soko').length;
+
+                currentRekapData.transferKeSoko = allStock.filter(item => item.tanggalTransfer && item.tanggalTransfer.startsWith(dateStr) && item.sumberAsal === 'mbutoh').length;
+                currentRekapData.transferKeMbutoh = allStock.filter(item => item.tanggalTransfer && item.tanggalTransfer.startsWith(dateStr) && item.sumberAsal === 'soko').length;
+                
+                currentRekapData.malamMbutoh = currentRekapData.pagiMbutoh + masukMbutoh - currentRekapData.lakuMbutoh - currentRekapData.transferKeSoko + currentRekapData.transferKeMbutoh;
+                currentRekapData.malamSoko = currentRekapData.pagiSoko + masukSoko - currentRekapData.lakuSoko + currentRekapData.transferKeSoko - currentRekapData.transferKeMbutoh;
+
+                await setDoc(doc(db, `${basePath}/rekap_harian`, dateStr), currentRekapData, { merge: true });
+                
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+            
+            isRecalculating = false;
+            showToast('Rekap selesai dihitung ulang.', 'success');
+        };
+
+        // --- CRUD and Actions ---
+        const handleAddBrand = async (brandName) => {
+            const trimmedBrand = brandName.trim().toUpperCase();
+            const basePath = `/artifacts/${appId}/public/data`;
+            if (!trimmedBrand) return showToast('Nama brand tidak boleh kosong!', 'error');
+            try {
+                await setDoc(doc(db, `${basePath}/brands`, trimmedBrand), { nama: trimmedBrand });
+                showToast('Brand baru berhasil disimpan!', 'success');
+                return trimmedBrand;
+            } catch (error) { showToast('Gagal menyimpan brand baru.', 'error'); return null; }
+        };
+        
+        const handleAddTipe = async (tipeName, brandForTipe) => {
+             const basePath = `/artifacts/${appId}/public/data`;
+             if (!tipeName.trim() || !brandForTipe) return showToast('Brand dan Tipe harus diisi!', 'error');
+             try {
+                const docRef = await addDoc(collection(db, `${basePath}/tipe_hp`), { nama: tipeName.trim(), brand: brandForTipe });
+                showToast('Tipe HP baru berhasil disimpan!', 'success');
+                return {id: docRef.id, nama: tipeName.trim(), brand: brandForTipe};
+             } catch (error) { showToast('Gagal menyimpan tipe baru.', 'error'); return null; }
+        };
+        
+        const handleAddStok = async (newItem) => {
+            const basePath = `/artifacts/${appId}/public/data`;
+            try {
+                await addDoc(collection(db, `${basePath}/stock_hp`), { ...newItem, status: 'Tersedia' });
+                showToast('Stok baru berhasil ditambah! Menghitung ulang rekap...', 'success');
+                await recalculateRekapFrom(newItem.tanggalMasuk.split('T')[0]);
+                closeModal('addStokModal');
+            } catch (error) { 
+                showToast(`Gagal menambah stok: ${error.message}`, 'error');
+                console.error(error);
+            }
+        };
+        
+        const handleHpDatang = async (newItem) => {
+            const basePath = `/artifacts/${appId}/public/data`;
+            const operationDate = newItem.tanggalMasuk.split('T')[0];
+            const rekapDocRef = doc(db, `${basePath}/rekap_harian`, operationDate);
+            try {
+                await addDoc(collection(db, `${basePath}/stock_hp`), { ...newItem, sumber: 'mbutoh', status: 'Tersedia' });
+                const updates = {
+                    hpDatang: increment(1),
+                    malamMbutoh: increment(1)
+                };
+                await updateDoc(rekapDocRef, updates);
+                showToast('HP datang berhasil dicatat!', 'success');
+                closeModal('hpDatangModal');
+            } catch (error) { 
+                if (error.code === 'not-found') { // If rekap doc doesn't exist, create it first then retry
+                    await getOrCreateRekapData(operationDate);
+                    handleHpDatang(newItem);
+                } else {
+                    showToast(`Gagal mencatat HP datang: ${error.message}`, 'error'); 
+                    console.error(error);
+                }
+            }
+        };
+
+        const handleUpdateItem = async (itemId, oldItem, updatedData) => {
+             const basePath = `/artifacts/${appId}/public/data`;
+             const docRef = doc(db, `${basePath}/stock_hp`, itemId);
+             try {
+                await updateDoc(docRef, updatedData);
+                const oldDate = oldItem.tanggalMasuk.split('T')[0];
+                const newDate = updatedData.tanggalMasuk.split('T')[0];
+                const startDate = oldDate < newDate ? oldDate : newDate;
+                await recalculateRekapFrom(startDate);
+                showToast('Data HP berhasil diupdate!', 'success');
+                closeModal('editStokModal');
+             } catch(error){ showToast('Gagal mengupdate data.', 'error'); }
+        };
+
+        const handleConfirmDelete = async (item) => {
+            const basePath = `/artifacts/${appId}/public/data`;
+            const operationDate = item.tanggalMasuk.split('T')[0];
+            const stockDocRef = doc(db, `${basePath}/stock_hp`, item.id);
+            try {
+                await deleteDoc(stockDocRef);
+                await recalculateRekapFrom(operationDate);
+                showToast('Stok HP berhasil dihapus!', 'success');
+                closeModal('deleteConfirmModal');
+            } catch(error){ showToast(`Gagal menghapus: ${error.message}`, 'error'); }
+        };
+        
+        const handleConfirmSale = async (item, dateYMD) => {
+            const basePath = `/artifacts/${appId}/public/data`;
+            const stockDocRef = doc(db, `${basePath}/stock_hp`, item.id);
+            try {
+                await updateDoc(stockDocRef, { status: 'Terjual', tanggalTerjual: new Date(dateYMD + 'T12:00:00Z').toISOString() });
+                await recalculateRekapFrom(dateYMD);
+                showToast(`HP terjual di tgl ${dateYMD}!`, 'success');
+                closeModal('saleConfirmModal');
+            } catch (error) { showToast(`Gagal konfirmasi penjualan: ${error.message}`, 'error'); }
+        };
+
+        const handleConfirmTransfer = async (item) => {
+            const basePath = `/artifacts/${appId}/public/data`;
+            const newSumber = item.sumber === 'mbutoh' ? 'soko' : 'mbutoh';
+            const operationDate = getTodayYMD(); 
+            const stockDocRef = doc(db, `${basePath}/stock_hp`, item.id);
+             try {
+                await updateDoc(stockDocRef, { sumber: newSumber, tanggalTransfer: new Date().toISOString(), sumberAsal: item.sumber });
+                await recalculateRekapFrom(operationDate);
+                showToast(`Stok berhasil ditransfer ke ${newSumber}`, 'success');
+                closeModal('transferConfirmModal');
+            } catch (error) { showToast(`Gagal transfer: ${error.message}`, 'error'); }
+        };
+        
+        // --- Modal Opening Functions ---
+        const openStokFormModal = (itemToEdit = null, isHpDatang = false) => {
+            const modalId = isHpDatang ? 'hpDatangModal' : (itemToEdit ? 'editStokModal' : 'addStokModal');
+            const title = isHpDatang ? 'Catat HP Datang' : (itemToEdit ? 'Edit Stok' : 'Tambah Stok Baru');
+            const item = itemToEdit || { brand: '', tipe: '', imei: '', warna: '', sumber: 'mbutoh', tanggalMasuk: new Date().toISOString() };
+
+            const formHTML = `
+                <form id="${modalId}-form" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                        <select id="form-brand-select" class="w-full bg-gray-100 border border-gray-300 text-slate-800 rounded-lg p-2" required>
+                            <option value="">Pilih Brand</option>
+                            ${brandList.map(b => `<option value="${b}" ${item.brand === b ? 'selected' : ''}>${b}</option>`).join('')}
+                            <option value="ADD_NEW" class="font-bold text-sky-600">Tambah Brand Baru...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Tipe HP</label>
+                        <select id="form-tipe-select" class="w-full bg-gray-100 border border-gray-300 text-slate-800 rounded-lg p-2" ${!item.brand ? 'disabled' : ''} required>
+                            <!-- Tipe options will be populated by JS -->
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">IMEI</label>
+                        <input type="number" id="form-imei-input" value="${item.imei}" class="w-full bg-gray-100 border border-gray-300 text-slate-800 rounded-lg p-2" placeholder="15 digit nomor IMEI" required/>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Warna</label>
+                        <input type="text" id="form-warna-input" value="${item.warna}" class="w-full bg-gray-100 border border-gray-300 text-slate-800 rounded-lg p-2" placeholder="Contoh: Putih" />
+                    </div>
+                    ${!isHpDatang ? `
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Sumber Stok</label>
+                        <select id="form-sumber-select" class="w-full bg-gray-100 border border-gray-300 text-slate-800 rounded-lg p-2">
+                            <option value="mbutoh" ${item.sumber === 'mbutoh' ? 'selected' : ''}>Mbutoh</option>
+                            <option value="soko" ${item.sumber === 'soko' ? 'selected' : ''}>Soko</option>
+                            <option value="lainnya" ${item.sumber === 'lainnya' ? 'selected' : ''}>Lainnya</option>
+                        </select>
+                    </div>
+                    ` : ''}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Tanggal Masuk</label>
+                        <input type="date" id="form-tanggal-input" value="${item.tanggalMasuk ? item.tanggalMasuk.split('T')[0] : getTodayYMD()}" class="w-full bg-gray-100 border border-gray-300 text-slate-800 rounded-lg p-2" required/>
+                    </div>
+                    <div class="mt-6 flex justify-end">
+                        <button type="submit" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-6 rounded-lg transition-colors">Simpan</button>
+                    </div>
+                </form>
+            `;
+
+            const modal = createModal(modalId, title, formHTML);
+
+            const brandSelect = modal.querySelector('#form-brand-select');
+            const tipeSelect = modal.querySelector('#form-tipe-select');
+            
+            const populateTipeOptions = (selectedBrand) => {
+                const filteredTipe = tipeHpList.filter(tipe => tipe.brand === selectedBrand).map(t => t.nama);
+                tipeSelect.innerHTML = '<option value="">Pilih Tipe</option>';
+                filteredTipe.forEach(t => {
+                    tipeSelect.innerHTML += `<option value="${t}" ${item.tipe === t ? 'selected' : ''}>${t}</option>`;
+                });
+                tipeSelect.innerHTML += '<option value="ADD_NEW" class="font-bold text-sky-600">Tambah Tipe Baru...</option>';
+                tipeSelect.disabled = !selectedBrand;
+            };
+
+            if (item.brand) {
+                populateTipeOptions(item.brand);
+            }
+
+            brandSelect.addEventListener('change', (e) => {
+                if (e.target.value === 'ADD_NEW') {
+                    openAddBrandModal(brandSelect);
+                } else {
+                    populateTipeOptions(e.target.value);
+                }
+            });
+
+            tipeSelect.addEventListener('change', (e) => {
+                if (e.target.value === 'ADD_NEW') {
+                    const currentBrand = brandSelect.value;
+                    if (!currentBrand) {
+                        showToast('Pilih brand dulu!', 'error');
+                        tipeSelect.value = '';
+                        return;
+                    }
+                    openAddTipeModal(currentBrand, tipeSelect);
+                }
+            });
+
+            modal.querySelector('form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const formData = {
+                    brand: modal.querySelector('#form-brand-select').value,
+                    tipe: modal.querySelector('#form-tipe-select').value,
+                    imei: modal.querySelector('#form-imei-input').value,
+                    warna: modal.querySelector('#form-warna-input').value,
+                    sumber: isHpDatang ? 'mbutoh' : modal.querySelector('#form-sumber-select').value,
+                    tanggalMasuk: new Date(modal.querySelector('#form-tanggal-input').value + 'T12:00:00Z').toISOString(),
+                };
+
+                if(isHpDatang) handleHpDatang(formData);
+                else if (itemToEdit) handleUpdateItem(itemToEdit.id, item, formData);
+                else handleAddStok(formData);
+            });
+        };
+
+        const openAddBrandModal = (originalSelectElement) => {
+            const content = `
+                <form id="add-brand-form">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nama Brand</label>
+                    <input type="text" id="new-brand-name" class="w-full bg-gray-100 border border-gray-300 rounded-lg p-2" placeholder="Contoh: VIVO" required />
+                    <div class="mt-6 flex justify-end">
+                        <button type="submit" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-6 rounded-lg">Simpan Brand</button>
+                    </div>
+                </form>
+            `;
+            const modal = createModal('addBrandModal', 'Tambah Brand Baru', content, 'sm');
+            modal.querySelector('form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const brandName = modal.querySelector('#new-brand-name').value;
+                const newBrand = await handleAddBrand(brandName);
+                if (newBrand) {
+                    originalSelectElement.innerHTML += `<option value="${newBrand}">${newBrand}</option>`;
+                    originalSelectElement.value = newBrand;
+                    originalSelectElement.dispatchEvent(new Event('change')); // Trigger change to update tipe
+                    closeModal('addBrandModal');
+                }
+            });
+        };
+
+        const openAddTipeModal = (brand, originalTipeSelect) => {
+            const content = `
+                 <form id="add-tipe-form">
+                     <label class="block text-sm font-medium text-gray-700 mb-1">Nama Tipe HP</label>
+                     <input type="text" id="new-tipe-name" class="w-full bg-gray-100 border border-gray-300 rounded-lg p-2" placeholder="Contoh: Y200 5G" required />
+                     <div class="mt-6 flex justify-end"><button type="submit" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-6 rounded-lg">Simpan Tipe</button></div>
+                 </form>
+            `;
+            const modal = createModal('addTipeModal', `Tambah Tipe untuk ${brand}`, content, 'sm');
+            modal.querySelector('form').addEventListener('submit', async e => {
+                e.preventDefault();
+                const tipeName = modal.querySelector('#new-tipe-name').value;
+                const newTipe = await handleAddTipe(tipeName, brand);
+                if(newTipe){
+                    const newOption = new Option(newTipe.nama, newTipe.nama, false, true); // text, value, defaultSelected, selected
+                    originalTipeSelect.add(newOption, originalTipeSelect.options[originalTipeSelect.options.length - 1]); // Add before "Tambah baru"
+                    originalTipeSelect.value = newTipe.nama;
+                    closeModal('addTipeModal');
+                }
+            });
+        };
+
+        const openSaleConfirmModal = (item) => {
+            const content = `
+                <div id="sale-options">
+                    <p class="text-center mb-6">Apakah HP <span class="font-bold">${item.tipe}</span> terjual hari ini?</p>
+                    <div class="flex justify-center gap-4">
+                        <button id="sale-today-btn" class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-6 rounded-lg">Ya</button>
+                        <button id="sale-other-date-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-6 rounded-lg">Tidak, Tentukan Tanggal</button>
+                    </div>
+                </div>
+                <div id="sale-date-picker" class="hidden">
+                     <p class="mb-4">Pilih tanggal penjualan untuk HP <span class="font-bold">${item.tipe}</span>:</p>
+                     <input type="date" id="sale-date-input" value="${getTodayYMD()}" max="${getTodayYMD()}" class="w-full bg-gray-100 border border-gray-300 text-slate-800 rounded-lg p-2 mb-6"/>
+                     <div class="flex justify-end">
+                         <button id="sale-confirm-date-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-6 rounded-lg">Konfirmasi Penjualan</button>
+                     </div>
+                </div>
+            `;
+            const modal = createModal('saleConfirmModal', 'Konfirmasi Penjualan', content, 'sm');
+            modal.querySelector('#sale-today-btn').addEventListener('click', () => handleConfirmSale(item, getTodayYMD()));
+            modal.querySelector('#sale-other-date-btn').addEventListener('click', () => {
+                modal.querySelector('#sale-options').classList.add('hidden');
+                modal.querySelector('#sale-date-picker').classList.remove('hidden');
+            });
+            modal.querySelector('#sale-confirm-date-btn').addEventListener('click', () => {
+                const saleDate = modal.querySelector('#sale-date-input').value;
+                handleConfirmSale(item, saleDate);
+            });
+        };
+
+        const openTransferModal = (item) => {
+            const newSumber = item.sumber === 'mbutoh' ? 'soko' : 'mbutoh';
+            const content = `
+                <div class="text-center">
+                    <p class="mb-4">Transfer HP <span class="font-bold">${item.tipe}</span></p>
+                    <p class="mb-2 text-sm">Sumber saat ini: <span class="font-semibold capitalize bg-gray-200 px-2 py-1 rounded">${item.sumber}</span></p>
+                    <p class="my-6 text-sm">Pindahkan ke sumber:</p>
+                    <div class="flex justify-center">
+                        <button id="confirm-transfer-btn" class="bg-sky-500 hover:bg-sky-600 text-white font-bold py-3 px-8 rounded-lg transition-colors text-lg capitalize">${newSumber}</button>
+                    </div>
+                </div>
+            `;
+            const modal = createModal('transferConfirmModal', 'Transfer Sumber Stok', content, 'sm');
+            modal.querySelector('#confirm-transfer-btn').addEventListener('click', () => handleConfirmTransfer(item));
+        };
+        
+        const openDeleteModal = (item) => {
+             const content = `
+                <div class="text-center">
+                    <p>Yakin ingin menghapus HP <span class="font-bold">${item.tipe}</span> dengan IMEI <span class="font-bold">${item.imei}</span>?</p>
+                    <p class="text-sm text-red-600 mt-2">Tindakan ini tidak bisa dibatalkan dan akan mengurangi stok malam pada tanggal masuknya.</p>
+                    <div class="flex justify-center gap-4 mt-6">
+                        <button id="cancel-delete-btn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-6 rounded-lg">Batal</button>
+                        <button id="confirm-delete-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg">Ya, Hapus</button>
+                    </div>
+                </div>
+             `;
+             const modal = createModal('deleteConfirmModal', 'Hapus Stok HP', content, 'sm');
+             modal.querySelector('#cancel-delete-btn').addEventListener('click', () => closeModal('deleteConfirmModal'));
+             modal.querySelector('#confirm-delete-btn').addEventListener('click', () => handleConfirmDelete(item));
+        };
+        
+        // --- Event Listeners Setup ---
+        const setupEventListeners = () => {
+            // Page navigation
+            const navButtons = document.querySelectorAll('.nav-button, .nav-button-mobile');
+            navButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const pageId = btn.dataset.page;
+                    document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+                    document.getElementById(`${pageId}-page`).classList.remove('hidden');
+                    
+                    navButtons.forEach(b => {
+                        b.classList.remove('text-sky-600', 'bg-sky-100');
+                        b.classList.add('text-gray-500');
+                    });
+                    document.querySelectorAll(`[data-page="${pageId}"]`).forEach(activeBtn => {
+                        activeBtn.classList.add('text-sky-600');
+                         if(!activeBtn.classList.contains('nav-button-mobile')){
+                             activeBtn.classList.add('bg-sky-100');
+                         }
+                    });
+
+                    if(pageId === 'statistik') renderStatsPage();
+                });
+            });
+
+            // Date, Search, Filter
+            viewDateInput.value = viewDate;
+            viewDateInput.addEventListener('change', (e) => {
+                viewDate = e.target.value;
+                setupRekapListener(viewDate);
+            });
+            searchInput.addEventListener('input', (e) => {
+                searchTerm = e.target.value;
+                renderStockTable();
+            });
+            filterButtons.addEventListener('click', (e) => {
+                if (e.target.matches('.filter-btn')) {
+                    currentFilter = e.target.dataset.filter;
+                    document.querySelectorAll('.filter-btn').forEach(b => {
+                        b.classList.remove('bg-sky-500', 'text-white');
+                        b.classList.add('bg-gray-200', 'text-gray-600');
+                    });
+                    e.target.classList.add('bg-sky-500', 'text-white');
+                    e.target.classList.remove('bg-gray-200', 'text-gray-600');
+                    renderStockTable();
+                }
+            });
+
+            // Action buttons in table (delegated listener)
+            stockTableBody.addEventListener('click', e => {
+                const button = e.target.closest('button');
+                if (!button) return;
+                
+                const itemId = button.dataset.id;
+                const item = stock.find(s => s.id === itemId);
+
+                if (button.classList.contains('action-btn-sale')) {
+                    openSaleConfirmModal(item);
+                } else if (button.classList.contains('action-btn-transfer')) {
+                    openTransferModal(item);
+                } else if (button.classList.contains('action-btn-edit')) {
+                    openStokFormModal(item, false);
+                } else if (button.classList.contains('action-btn-delete')) {
+                    openDeleteModal(item);
+                }
+            });
+
+            // Main action buttons
+            document.getElementById('add-stok-btn').addEventListener('click', () => openStokFormModal(null, false));
+            document.getElementById('hp-datang-btn').addEventListener('click', () => openStokFormModal(null, true));
+            
+            // Settings page buttons
+            document.getElementById('logout-btn').addEventListener('click', () => {
+                sessionStorage.removeItem('isLoggedIn');
+                location.reload();
+            });
+            document.getElementById('import-btn').addEventListener('click', () => document.getElementById('import-file-input').click());
+            document.getElementById('import-file-input').addEventListener('change', handleImport);
+            document.getElementById('export-btn').addEventListener('click', handleExport);
+            
+            const resetInput = document.getElementById('reset-confirm-input');
+            const resetBtn = document.getElementById('reset-data-btn');
+            resetInput.addEventListener('input', (e) => {
+                resetBtn.disabled = e.target.value !== "RESET DATA";
+            });
+            resetBtn.addEventListener('click', handleResetData);
+        };
+        
+        // --- Settings Page Functions (Import/Export/Reset) ---
+        const handleExport = () => {
+            if (!window.XLSX) return showToast('Library ekspor belum siap.', 'error');
+            if (stock.length === 0) return showToast('Tidak ada data stok untuk diekspor.', 'error');
+            
+            showToast('Mempersiapkan file ekspor...', 'success');
+            const worksheet = window.XLSX.utils.json_to_sheet(stock);
+            const workbook = window.XLSX.utils.book_new();
+            window.XLSX.utils.book_append_sheet(workbook, worksheet, "Stok HP");
+            window.XLSX.writeFile(workbook, `StokIn_Export_${getTodayYMD()}.xlsx`);
+        };
+
+        const handleImport = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            showToast('Memproses file impor...', 'success');
+
+            const processData = async (data) => {
+                const requiredHeaders = ['tipe', 'imei'];
+                if (data.length === 0) return showToast('File tidak mengandung data.', 'error');
+                
+                const headers = Object.keys(data[0]);
+                if (!requiredHeaders.every(h => headers.includes(h))) {
+                    return showToast(`File harus punya kolom header minimal: ${requiredHeaders.join(', ')}`, 'error');
+                }
+
+                const batch = writeBatch(db);
+                const collectionRef = collection(db, `/artifacts/${appId}/public/data/stock_hp`);
+
+                data.forEach(row => {
+                    if (row.tipe && row.imei) {
+                        const newDocRef = doc(collectionRef);
+                        const brand = String(row.brand || (String(row.tipe).split(' ')[0] || "LAINNYA")).toUpperCase();
+                        batch.set(newDocRef, {
+                            brand,
+                            tipe: String(row.tipe),
+                            imei: String(row.imei),
+                            warna: String(row.warna || ''),
+                            sumber: String(row.sumber || 'lainnya'),
+                            status: 'Tersedia',
+                            tanggalMasuk: new Date().toISOString(),
+                            tanggalTerjual: null
+                        });
+                    }
+                });
+
+                try {
+                    await batch.commit();
+                    showToast(`${data.length} item berhasil diimpor!`, 'success');
+                } catch (error) {
+                    showToast('Gagal menyimpan data impor.', 'error');
+                    console.error("Error importing data: ", error);
+                } finally {
+                     event.target.value = null; // Reset file input
+                }
+            };
+
+            if (file.name.endsWith('.csv')) {
+                if (!window.Papa) return showToast('Library impor CSV belum siap.', 'error');
+                window.Papa.parse(file, {
+                    header: true, skipEmptyLines: true,
+                    complete: (results) => { if(results.data) processData(results.data); },
+                    error: () => showToast('Gagal membaca file CSV.', 'error')
+                });
+            } else if (file.name.endsWith('.xlsx')) {
+                if (!window.XLSX) return showToast('Library impor Excel belum siap.', 'error');
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const workbook = window.XLSX.read(e.target.result, { type: 'array' });
+                        const json = window.XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                        if(json.length > 0) processData(json);
+                        else showToast('File Excel kosong atau format tidak valid.', 'error');
+                    } catch (error) { showToast('Gagal membaca file Excel.', 'error'); }
+                };
+                reader.onerror = () => showToast('Gagal membaca file.', 'error');
+                reader.readAsArrayBuffer(file);
+            } else {
+                showToast('Format file tidak didukung. Harap gunakan .csv atau .xlsx', 'error');
+            }
+        };
+
+        const handleResetData = async () => {
+             const confirmText = document.getElementById('reset-confirm-input').value;
+             if (confirmText !== "RESET DATA") return showToast('Teks konfirmasi salah!', 'error');
+
+             showToast('Menghapus semua data...', 'success');
+             const collectionsToDelete = ['stock_hp', 'rekap_harian', 'tipe_hp', 'brands'];
+             const basePath = `/artifacts/${appId}/public/data`;
+             try {
+                 for (const coll of collectionsToDelete) {
+                     const collRef = collection(db, `${basePath}/${coll}`);
+                     const snapshot = await getDocs(collRef);
+                     const batch = writeBatch(db);
+                     snapshot.docs.forEach(doc => batch.delete(doc.ref));
+                     await batch.commit();
+                 }
+                 showToast('Semua data berhasil direset!', 'success');
+             } catch (error) {
+                 showToast('Gagal mereset data.', 'error');
+             } finally {
+                document.getElementById('reset-confirm-input').value = '';
+                document.getElementById('reset-data-btn').disabled = true;
+             }
+        };
+
+        const initializeFirebase = () => {
+            try {
+                const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                appId = rawAppId.replace(/[\/.]/g, '_');
+                
+                let firebaseConfig;
+                let isDemoMode = false;
+
+                if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                    try { firebaseConfig = JSON.parse(__firebase_config); } catch (e) { isDemoMode = true; }
+                } else {
+                    isDemoMode = true;
+                }
+
+                if (isDemoMode) {
+                     firebaseConfig = {
+                        apiKey: "AIzaSyDP0OdQk5zypCp_k1OwPSuGtm7h7mnsFKE",
+                        authDomain: "indahcell-4ebf5.firebaseapp.com",
+                        projectId: "indahcell-4ebf5",
+                        storageBucket: "indahcell-4ebf5.firebasestorage.app",
+                        messagingSenderId: "1091421226791",
+                        appId: "1:1091421226791:web:efc760d7dbf895b07b4b02"
+                    };
+                }
+                
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                
+                onAuthStateChanged(auth, async user => {
+                    if (user) {
+                        userId = user.uid;
+                        isAuthReady = true;
+                        if (isDemoMode) { showToast('Selamat Datang Sir', 'success'); }
+                        setupFirebaseListeners();
+                        setupEventListeners();
+                    } else {
+                        try {
+                            const authToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                            if (authToken) await signInWithCustomToken(auth, authToken);
+                            else await signInAnonymously(auth);
+                        } catch (e) {
+                            showToast('Gagal otentikasi.', 'error');
+                            loadingStatus.textContent = `Error: ${e.message}`;
+                        }
+                    }
+                });
+
+            } catch (e) {
+                loadingSpinner.innerHTML = `<p class="text-red-600 font-bold p-4 text-center">Error Inisialisasi: ${e.message}</p>`;
+                showToast('Gagal memuat aplikasi.', 'error');
+            }
+        };
+
+        // --- App Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const loginForm = document.getElementById('login-form');
+            
+            const showLoginToast = (message, type = 'error') => {
+                 const toastContainer = document.getElementById('login-toast-container') || document.createElement('div');
+                 toastContainer.id = 'login-toast-container';
+                 toastContainer.innerHTML = `
+                        <div id="login-toast" class="fixed top-5 right-5 text-white py-2 px-4 rounded-lg shadow-lg flex items-center z-[99] animate-fade-in-down ${type === 'success' ? 'bg-green-500' : 'bg-red-500'}">
+                           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" x2="12" y1="8" y2="12"></line><line x1="12" x2="12.01" y1="16" y2="16"></line></svg>
+                           <span id="login-toast-message" class="ml-2">${message}</span>
+                        </div>
+                    `;
+                 if(!document.getElementById('login-toast-container')) document.body.appendChild(toastContainer);
+                
+                setTimeout(() => {
+                    toastContainer.remove();
+                }, 3000);
+            };
+
+            // Check if user is already logged in from a previous session
+            if (sessionStorage.getItem('isLoggedIn') === 'true') {
+                loginPage.style.display = 'none';
+                initializeFirebase();
+            } else {
+                loginPage.classList.remove('hidden');
+                loginPage.classList.add('flex');
+                loadingSpinner.style.display = 'none';
+            }
+
+            loginForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+
+                if (username === 'Indahcell' && password === 'Tanpaakses') {
+                    sessionStorage.setItem('isLoggedIn', 'true'); // Save login state
+                    loginPage.classList.add('animate-fade-out');
+                    loadingSpinner.style.display = 'flex';
+                    initializeFirebase();
+                } else {
+                    showLoginToast('Username atau password salah!', 'error');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+
