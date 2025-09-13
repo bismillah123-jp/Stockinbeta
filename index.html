@@ -801,18 +801,16 @@
                 return initialSnap.data();
             }
 
-            // If the doc doesn't exist, we proceed to the create logic.
-            // This query for the previous day CANNOT be in the transaction.
-            const q = query(
-                collection(db, `${basePath}/rekap_harian`),
-                where("tanggal", "<", date),
-                orderBy("tanggal", "desc"),
-                limit(1)
-            );
-            const prevRekapSnap = await getDocs(q);
+            // If doc doesn't exist, calculate previous day's date string for a direct lookup.
+            const prevDate = new Date(date + 'T12:00:00Z');
+            prevDate.setDate(prevDate.getDate() - 1);
+            const prevDateStr = formatDateToYMD(prevDate);
+            const prevRekapDocRef = doc(db, `${basePath}/rekap_harian`, prevDateStr);
+
+            const prevRekapSnap = await getDoc(prevRekapDocRef);
             let yesterdayData = null;
-            if (!prevRekapSnap.empty) {
-                yesterdayData = prevRekapSnap.docs[0].data();
+            if (prevRekapSnap.exists()) {
+                yesterdayData = prevRekapSnap.data();
             }
 
             const pagiMbutoh = yesterdayData ? yesterdayData.malamMbutoh || 0 : 0;
@@ -828,7 +826,6 @@
             try {
                 await runTransaction(db, async (transaction) => {
                     const docInTransaction = await transaction.get(rekapDocRef);
-                    // Check if another process created the doc while we were querying.
                     if (!docInTransaction.exists()) {
                         transaction.set(rekapDocRef, newRekapData);
                     }
